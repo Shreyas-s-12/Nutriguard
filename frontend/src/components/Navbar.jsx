@@ -46,11 +46,11 @@ function Navbar() {
           <Link to="/" className="flex items-center space-x-3">
             <img 
               src={logo} 
-              alt="NutriGuard Logo" 
+              alt="NutriDetect AI Logo" 
               className="w-10 h-10 transition duration-300 transform hover:scale-110 drop-shadow-[0_0_10px_rgba(34,211,238,0.7)] hover:drop-shadow-[0_0_20px_rgba(34,211,238,1)]" 
             />
             <span className="text-xl font-bold gradient-text">
-              NutriGuard AI
+              NutriDetect AI
             </span>
           </Link>
           

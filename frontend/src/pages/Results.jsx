@@ -82,7 +82,11 @@ function Results() {
     detected_chemicals = [],
     diseases = [],
     nutrition_issues = [],
-    recommendation = ''
+    recommendation = '',
+    // Translation fields
+    original_ingredients = '',
+    translated_ingredients = '',
+    was_translated = false
   } = results;
 
   // Handle both old and new format
@@ -168,6 +172,29 @@ function Results() {
             New Analysis
           </button>
         </div>
+
+        {/* Translation Info - Show when ingredients were translated */}
+        {was_translated && translated_ingredients && (
+          <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-6 mb-8">
+            <div className="flex items-center mb-4">
+              <svg className="w-5 h-5 text-cyan-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+              </svg>
+              <h3 className="text-lg font-semibold text-white">Translated Ingredients</h3>
+            </div>
+            
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm text-slate-400 mb-1">Original Input:</p>
+                <p className="text-slate-300 text-sm bg-white/5 p-3 rounded-lg">{original_ingredients}</p>
+              </div>
+              <div>
+                <p className="text-sm text-cyan-400 mb-1">Translated to English:</p>
+                <p className="text-white text-sm bg-cyan-500/10 p-3 rounded-lg border border-cyan-500/20">{translated_ingredients}</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Risk Score Card */}
         <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 mb-8">

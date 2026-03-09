@@ -53,7 +53,7 @@ function Chemicals() {
           </span>
         </h1>
         <p className="text-slate-400 text-lg">
-          Explore {total || '300+'} food additives and their health effects
+          Explore {total || '1000+'} food additives and their health effects
         </p>
       </div>
 

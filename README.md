@@ -1,10 +1,10 @@
-# NutriGuard AI 🛡️
+# NutriDetect AI 🛡️
 
 Smart Food Safety & Chemical Risk Awareness Platform
 
-**NutriGuard AI** is a hackathon-ready platform that analyzes packaged food labels to detect harmful chemicals, hidden sugars, and nutrition risks using OCR technology and a comprehensive chemical database.
+**NutriDetect AI** is a hackathon-ready platform that analyzes packaged food labels to detect harmful chemicals, hidden sugars, and nutrition risks using OCR technology and a comprehensive chemical database.
 
-![NutriGuard AI](https://img.shields.io/badge/NutriGuard-AI-blue?style=for-the-badge)
+![NutriDetect AI](https://img.shields.io/badge/NutriDetect-AI-blue?style=for-the-badge)
 ![Python](https://img.shields.io/badge/Python-3.11+-yellow?style=flat-square)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.109-green?style=flat-square)
 ![React](https://img.shields.io/badge/React-18-blue?style=flat-square)
@@ -58,7 +58,7 @@ Frontend dashboard displays results
 ## 📁 Project Structure
 
 ```
-NutriGuard-AI/
+NutriDetect-AI/
 ├── backend/
 │   ├── main.py              # FastAPI application
 │   ├── config.yaml          # Configuration (risk weights, thresholds)
@@ -268,4 +268,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ---
 
-**NutriGuard AI** - Making food safety accessible to everyone! 🛡️
+**NutriDetect AI** - Making food safety accessible to everyone! 🛡️

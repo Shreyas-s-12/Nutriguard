@@ -1,4 +1,4 @@
-# NutriGuard AI Configuration
+# NutriDetect AI Configuration
 # Risk scoring weights (must sum to 100%)
 risk_weights:
   sugar_risk: 30

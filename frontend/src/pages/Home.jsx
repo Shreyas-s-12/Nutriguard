@@ -102,7 +102,7 @@ function Home() {
                     Welcome back, {user?.name || 'User'} 👋
                   </h2>
                   <p className="text-slate-300">
-                    You are logged in to NutriGuard AI.
+                    You are logged in to NutriDetect AI.
                   </p>
                 </div>
                 <span className="bg-green-500/20 text-green-400 rounded-full px-3 py-1 text-sm">
@@ -125,7 +125,7 @@ function Home() {
             
             <h1 className="text-5xl md:text-6xl font-bold mb-6">
               <span className="bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-                NutriGuard AI
+                NutriDetect AI
               </span>
             </h1>
             
@@ -163,7 +163,7 @@ function Home() {
         <div className="max-w-4xl mx-auto">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             <div className="bg-white/5 backdrop-blur-lg border border-white/10 rounded-2xl p-6 text-center">
-              <div className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent mb-2">300+</div>
+              <div className="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent mb-2">1000+</div>
               <div className="text-slate-400 text-sm">Chemical Additives</div>
             </div>
             <div className="bg-white/5 backdrop-blur-lg border border-white/10 rounded-2xl p-6 text-center">

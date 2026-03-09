@@ -7,9 +7,44 @@ function Analyze() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [inputText, setInputText] = useState('');
+  const [language, setLanguage] = useState('auto');
   const [error, setError] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const textareaRef = useRef(null);
+
+  // Voice recognition handler
+  const startVoiceRecognition = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    if (!SpeechRecognition) {
+      alert("Voice input is not supported in this browser. Please use Chrome, Edge, or Safari.");
+      return;
+    }
+    
+    const recognition = new SpeechRecognition();
+    
+    // Set language based on selection
+    const langMap = {
+      'auto': 'en-US',
+      'en': 'en-US',
+      'es': 'es-ES',
+      'hi': 'hi-IN',
+      'kn': 'kn-IN'
+    };
+    recognition.lang = langMap[language] || 'en-US';
+    
+    recognition.start();
+    
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      setInputText((prev) => prev + (prev ? '\n' : '') + transcript);
+    };
+    
+    recognition.onerror = (event) => {
+      console.error('Voice recognition error:', event.error);
+      alert(`Voice recognition error: ${event.error}`);
+    };
+  };
 
   const parseInput = (text) => {
     // Split into ingredients and nutrition facts sections
@@ -47,11 +82,8 @@ function Analyze() {
     try {
       console.log("Sending food analysis request");
       
-      // Parse input to extract ingredients and nutrition facts
-      const { ingredients, nutritionText } = parseInput(inputText);
-      
-      // Use the new analyzeFood function with both ingredients and nutrition text
-      const result = await analyzeFood(ingredients, nutritionText || inputText);
+      // Use the new analyzeFood function with language support
+      const result = await analyzeFood(inputText, language);
       
       console.log('Analysis result received:', result);
       
@@ -141,16 +173,48 @@ Ingredients: Carbonated Water, Citric Acid, Natural Flavors, Aspartame, Potassiu
         <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
           {/* Section 1 - Nutrition Input */}
           <div className="p-8 border-b border-white/10">
-            <div className="flex items-center mb-4">
-              <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center mr-3">
-                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center">
+                <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center mr-3">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold text-white">Nutrition Facts & Ingredients</h2>
+                  <p className="text-sm text-slate-400">Paste or type the food label information</p>
+                </div>
+              </div>
+              
+              {/* Language Selector */}
+              <div className="flex items-center space-x-2">
+                <label className="text-sm text-slate-400">Language:</label>
+                <select
+                  value={language}
+                  onChange={(e) => setLanguage(e.target.value)}
+                  className="bg-white/10 border border-white/20 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                >
+                  <option value="auto">Auto Detect</option>
+                  <option value="en">English</option>
+                  <option value="es">Spanish</option>
+                  <option value="hi">Hindi</option>
+                  <option value="kn">Kannada</option>
+                </select>
+              </div>
+            </div>
+            
+            <div className="flex items-center space-x-2 mb-3">
+              {/* Voice Input Button */}
+              <button
+                onClick={startVoiceRecognition}
+                className="flex items-center px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-white rounded-lg transition-colors text-sm font-medium"
+                title="Click to use voice input"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                 </svg>
-              </div>
-              <div>
-                <h2 className="text-xl font-semibold text-white">Nutrition Facts & Ingredients</h2>
-                <p className="text-sm text-slate-400">Paste or type the food label information</p>
-              </div>
+                Voice Input
+              </button>
             </div>
             
             <div 

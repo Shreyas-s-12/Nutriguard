@@ -1,6 +1,6 @@
 """
-NutriGuard AI - Backend API
-Smart Food Safety & Nutrition Risk Analysis Platform
+NutriDetect AI - Backend API
+AI-powered Food Ingredient Risk Detection Platform
 """
 
 import json
@@ -11,7 +11,37 @@ from pathlib import Path
 from typing import List, Dict, Optional, Any
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Form
+from deep_translator import GoogleTranslator
+
+
+def translate_to_english(text: str, source_language: str = 'auto') -> str:
+    """
+    Translate text to English using Google Translator.
+    
+    Args:
+        text: The text to translate
+        source_language: The source language code (e.g., 'es', 'hi', 'kn'). 
+                        Use 'auto' for automatic language detection.
+    
+    Returns:
+        Translated text in English, or original text if translation fails.
+    """
+    if not text or not text.strip():
+        return text
+    
+    try:
+        # If source is 'auto', use automatic detection
+        # Otherwise, use the specified language
+        source = 'auto' if source_language == 'auto' else source_language
+        translated = GoogleTranslator(source=source, target='en').translate(text)
+        if translated:
+            print(f"DEBUG: Translated from '{source_language}': '{text[:50]}...' -> '{translated[:50]}...'")
+            return translated
+        return text
+    except Exception as e:
+        print(f"DEBUG: Translation error: {str(e)}")
+        return text
 
 # Load chemicals data at startup
 CHEMICALS_DATA = []
@@ -68,8 +98,8 @@ with open(CONFIG_PATH, 'r') as f:
     CONFIG = yaml.safe_load(f)
 
 app = FastAPI(
-    title="NutriGuard AI API",
-    description="Smart Food Safety & Nutrition Risk Analysis Platform",
+    title="NutriDetect AI API",
+    description="AI-powered Food Ingredient Risk Detection Platform",
     version="3.0.0"
 )
 
@@ -90,6 +120,7 @@ class FoodAnalysisRequest(BaseModel):
     """Request model for comprehensive food analysis."""
     ingredients: str
     nutrition_text: Optional[str] = ""
+    language: Optional[str] = "auto"  # Source language for translation (auto-detect by default)
 
 
 class NutritionValues(BaseModel):
@@ -1170,7 +1201,7 @@ async def global_exception_handler(request, exc):
 async def root():
     """Root endpoint"""
     return {
-        "name": "NutriGuard AI API",
+        "name": "NutriDetect AI API",
         "version": "3.0.0",
         "description": "Smart Food Safety & Nutrition Risk Analysis Platform",
         "status": "running"
@@ -1308,6 +1339,184 @@ async def analyze_nutrition(request: NutritionAnalysisRequest):
         print(f"DEBUG: Error in analyze_nutrition: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
+# ============================================
+# AI CHATBOT ENDPOINT
+# ============================================
+
+class ChatRequest(BaseModel):
+    question: str
+
+@app.post("/chat")
+async def chat_query(request: ChatRequest):
+    """
+    AI Chatbot endpoint for querying food additives and chemicals.
+    
+    Accepts JSON:
+    {
+      "question": "What is E621?"
+    }
+    
+    Returns structured JSON with chemical information or fallback response.
+    """
+    question = request.question.strip()
+    question_lower = question.lower()
+    
+    print(f"\nDEBUG: /chat endpoint called with question: '{question}'")
+    
+    # STEP 1: Extract E-numbers from question
+    e_numbers = re.findall(r'E(\d+)', question.upper())
+    
+    # Also check for INS numbers
+    ins_numbers = re.findall(r'INS\s*(\d+)', question, re.IGNORECASE)
+    
+    print(f"  Detected E-numbers: {e_numbers}")
+    print(f"  Detected INS numbers: {ins_numbers}")
+    
+    # STEP 2: Search for chemical by E-number
+    found_chemical = None
+    
+    # Check E-numbers in question
+    for e_num in e_numbers:
+        key = f'e{e_num}'
+        if key in CHEMICAL_INDEX:
+            found_chemical = CHEMICAL_INDEX[key]
+            print(f"  Found chemical by E-number: {key}")
+            break
+        # Also try without E prefix
+        key_no_e = e_num
+        if key_no_e in CHEMICAL_INDEX:
+            found_chemical = CHEMICAL_INDEX[key_no_e]
+            print(f"  Found chemical by number: {key_no_e}")
+            break
+    
+    # Check INS numbers in question
+    if not found_chemical:
+        for ins_num in ins_numbers:
+            key = f'e{ins_num}'
+            if key in CHEMICAL_INDEX:
+                found_chemical = CHEMICAL_INDEX[key]
+                print(f"  Found chemical by INS: {key}")
+                break
+    
+    # STEP 3: Search by chemical name or alias
+    if not found_chemical:
+        # Search in chemical names and aliases
+        for key, chem in CHEMICAL_INDEX.items():
+            if key in question_lower:
+                found_chemical = chem
+                print(f"  Found chemical by name/alias: {key}")
+                break
+    
+    # STEP 4: Handle category/risk queries
+    if not found_chemical:
+        # Check for category queries like "preservatives", "flavor enhancers"
+        category_keywords = {
+            'preservative': 'Preservative',
+            'preservatives': 'Preservative',
+            'flavor enhancer': 'Flavour Enhancer',
+            'flavor enhancers': 'Flavour Enhancer',
+            'flavour enhancer': 'Flavour Enhancer',
+            'flavour enhancers': 'Flavour Enhancer',
+            'color': 'Colour',
+            'colors': 'Colour',
+            'colour': 'Colour',
+            'colours': 'Colour',
+            'sweetener': 'Sweetener',
+            'sweeteners': 'Sweetener',
+            'emulsifier': 'Emulsifier',
+            'emulsifiers': 'Emulsifier',
+            'stabilizer': 'Stabiliser',
+            'stabilizers': 'Stabiliser',
+            'stabiliser': 'Stabiliser',
+            'stabilisers': 'Stabiliser',
+            'acid': 'Acid',
+            'acids': 'Acid',
+            'antioxidant': 'Antioxidant',
+            'antioxidants': 'Antioxidant',
+        }
+        
+        # Check for risk level queries
+        risk_keywords = {
+            'high risk': 'High',
+            'high-risk': 'High',
+            'moderate risk': 'Moderate',
+            'moderate-risk': 'Moderate',
+            'low risk': 'Low',
+            'low-risk': 'Low',
+        }
+        
+        # Check for specific queries
+        query_category = None
+        query_risk = None
+        
+        for kw, cat in category_keywords.items():
+            if kw in question_lower:
+                query_category = cat
+                break
+        
+        for kw, risk in risk_keywords.items():
+            if kw in question_lower:
+                query_risk = risk
+                break
+        
+        # If we have category and/or risk filters
+        if query_category or query_risk:
+            filtered_chemicals = CHEMICALS_DATA.copy()
+            
+            if query_category:
+                filtered_chemicals = [
+                    c for c in filtered_chemicals 
+                    if c.get('category', '').lower() == query_category.lower()
+                ]
+            
+            if query_risk:
+                filtered_chemicals = [
+                    c for c in filtered_chemicals 
+                    if c.get('risk_level', '').lower() == query_risk.lower()
+                ]
+            
+            if filtered_chemicals:
+                # Return a list response
+                result_list = []
+                for c in filtered_chemicals[:10]:  # Limit to 10 results
+                    result_list.append({
+                        "chemical_name": c.get('chemical_name', ''),
+                        "e_number": c.get('e_number', ''),
+                        "category": c.get('category', ''),
+                        "risk_level": c.get('risk_level', ''),
+                        "health_concerns": c.get('health_concerns', '')
+                    })
+                
+                category_text = query_category if query_category else "chemicals"
+                risk_text = f" {query_risk} risk" if query_risk else ""
+                
+                return {
+                    "answer": f"Found {len(filtered_chemicals)} {category_text}{risk_text} in the database. Here are some examples:",
+                    "type": "list",
+                    "chemicals": result_list,
+                    "total_found": len(filtered_chemicals)
+                }
+    
+    # STEP 5: Return chemical info if found
+    if found_chemical:
+        return {
+            "answer": f"{found_chemical.get('e_number', '')} is {found_chemical.get('chemical_name', '')}",
+            "chemical_name": found_chemical.get('chemical_name', ''),
+            "e_number": found_chemical.get('e_number', ''),
+            "category": found_chemical.get('category', ''),
+            "risk_level": found_chemical.get('risk_level', ''),
+            "health_concerns": found_chemical.get('health_concerns', ''),
+            "purpose": found_chemical.get('purpose', ''),
+            "safe_limit": found_chemical.get('safe_limit', ''),
+            "type": "single"
+        }
+    
+    # STEP 6: Fallback response
+    return {
+        "answer": "I could not find that chemical in the NutriDetect database. Try searching using an E-number (e.g., E621) or additive name.",
+        "type": "not_found"
+    }
+
 
 if __name__ == "__main__":
     import uvicorn
@@ -1317,6 +1526,65 @@ if __name__ == "__main__":
 # ============================================
 # NEW COMPREHENSIVE ANALYSIS ENDPOINT
 # ============================================
+
+@app.post("/analyze")
+async def analyze_food_simple(
+    ingredients: str = Form(None),
+    nutrition: str = Form(None),
+    language: str = Form("auto")
+):
+    """
+    Simple food analysis endpoint using Form data.
+    
+    Accepts Form data:
+    - ingredients: comma-separated ingredient list
+    - nutrition: nutrition facts text
+    - language: source language for translation (auto, en, es, hi, kn, etc.)
+    
+    Returns JSON with risk_level and detected_chemicals.
+    """
+    print("="*60)
+    print("/analyze ENDPOINT CALLED")
+    print(f"  Ingredients: {ingredients[:100] if ingredients else 'None'}...")
+    print(f"  Language: {language}")
+    print(f"  Nutrition: {nutrition[:100] if nutrition else 'None'}...")
+    
+    try:
+        # Translate ingredients to English if needed
+        ingredients_to_analyze = ingredients
+        
+        if ingredients and language and language != 'en':
+            print(f"DEBUG: Translating ingredients from '{language}' to English...")
+            ingredients_to_analyze = translate_to_english(
+                ingredients, 
+                source_language=language
+            )
+            print(f"DEBUG: Translated: '{ingredients_to_analyze[:100]}...'")
+        
+        # Run comprehensive analysis
+        result = analyze_food_comprehensive(
+            ingredient_text=ingredients_to_analyze or "",
+            nutrition_text=nutrition or ""
+        )
+        
+        # Return the required format
+        return {
+            "risk_level": result.get("risk_level", "Unknown"),
+            "detected_chemicals": result.get("detected_chemicals", []),
+            "explanation": result.get("recommendation", ""),
+            "risk_score": result.get("risk_score", 0),
+            "diseases": result.get("diseases", []),
+            "nutrition_issues": result.get("nutrition_issues", []),
+            "original_ingredients": ingredients,
+            "translated_ingredients": ingredients_to_analyze,
+            "was_translated": ingredients_to_analyze != ingredients if ingredients else False
+        }
+    
+    except Exception as e:
+        print(f"DEBUG: Error in /analyze: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 @app.post("/analyze-food")
 async def analyze_food(request: FoodAnalysisRequest):
@@ -1347,14 +1615,33 @@ async def analyze_food(request: FoodAnalysisRequest):
     print("="*60)
     print("ANALYZE FOOD ENDPOINT CALLED")
     print(f"  Ingredients: {request.ingredients[:100]}...")
+    print(f"  Language: {request.language}")
     print(f"  Nutrition text: {request.nutrition_text[:100] if request.nutrition_text else 'None'}...")
     
     try:
+        # Translate ingredients to English if needed
+        original_ingredients = request.ingredients
+        ingredients_to_analyze = request.ingredients
+        
+        # If language is not English, translate
+        if request.language and request.language != 'en':
+            print(f"DEBUG: Translating ingredients from '{request.language}' to English...")
+            ingredients_to_analyze = translate_to_english(
+                request.ingredients, 
+                source_language=request.language
+            )
+            print(f"DEBUG: Translated: '{ingredients_to_analyze[:100]}...'")
+        
         # Run comprehensive analysis
         result = analyze_food_comprehensive(
-            ingredient_text=request.ingredients,
+            ingredient_text=ingredients_to_analyze,
             nutrition_text=request.nutrition_text or ""
         )
+        
+        # Add original and translated ingredients to result for display
+        result['original_ingredients'] = original_ingredients
+        result['translated_ingredients'] = ingredients_to_analyze
+        result['was_translated'] = ingredients_to_analyze != original_ingredients
         
         print(f"\n  Results:")
         print(f"    Risk Level: {result['risk_level']}")

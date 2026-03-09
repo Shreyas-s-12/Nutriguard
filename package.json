@@ -1,7 +1,7 @@
 {
   "name": "nutriguard",
   "version": "1.0.0",
-  "description": "NutriGuard AI - Full Stack Application",
+  "description": "NutriDetect AI - Full Stack Application",
   "scripts": {
     "frontend": "cd frontend && npm run dev",
     "backend": "cd backend && uvicorn main:app --reload",

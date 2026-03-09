@@ -6,6 +6,16 @@ const api = axios.create({
   baseURL: API_URL
 });
 
+// Analyze food using FormData (multilingual support)
+export const analyzeFood = async (ingredients, language = 'auto') => {
+  const formData = new FormData();
+  formData.append('ingredients', ingredients);
+  formData.append('language', language);
+  
+  const response = await api.post('/analyze', formData);
+  return response.data;
+};
+
 // Analyze nutrition facts text
 export const analyzeNutrition = async (nutritionText) => {
   const response = await api.post('/analyze-nutrition', {
@@ -15,8 +25,8 @@ export const analyzeNutrition = async (nutritionText) => {
   return response.data;
 };
 
-// Comprehensive food analysis using database-driven detection
-export const analyzeFood = async (ingredients, nutritionText = '') => {
+// Comprehensive food analysis using database-driven detection (legacy)
+export const analyzeFoodLegacy = async (ingredients, nutritionText = '') => {
   const response = await api.post('/analyze-food', {
     ingredients: ingredients,
     nutrition_text: nutritionText

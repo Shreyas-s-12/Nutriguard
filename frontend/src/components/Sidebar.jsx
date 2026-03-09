@@ -72,7 +72,7 @@ function Sidebar() {
           <div className="p-2 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 backdrop-blur border border-cyan-500/20">
             <img
               src={logo}
-              alt="NutriGuard Logo"
+              alt="NutriDetect AI Logo"
               className="w-9 h-9 transition duration-300 transform hover:scale-110 
               drop-shadow-[0_0_10px_rgba(34,211,238,0.6)]
               hover:drop-shadow-[0_0_20px_rgba(34,211,238,1)]"
@@ -81,7 +81,7 @@ function Sidebar() {
           {!collapsed && (
             <div>
               <h1 className="text-lg font-bold bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">
-                NutriGuard
+                NutriDetect
               </h1>
               <p className="text-xs text-slate-400">AI Food Safety</p>
             </div>

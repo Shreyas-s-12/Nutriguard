@@ -9,6 +9,7 @@ import About from "./pages/About";
 import Guide from "./pages/Guide";
 import Login from "./pages/Login";
 import History from "./pages/History";
+import ChatAssistant from "./components/ChatAssistant";
 
 function App() {
   const [user, setUser] = useState(null);
@@ -50,6 +51,7 @@ function App() {
         {/* Default route - redirect to home */}
         <Route path="*" element={<Home />} />
       </Routes>
+      <ChatAssistant />
     </Router>
   );
 }
