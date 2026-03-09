@@ -1,8 +1,6 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 function Login() {
-  const navigate = useNavigate();
   const [loginMethod, setLoginMethod] = useState(null);
   const [formData, setFormData] = useState({
     email: '',
@@ -22,18 +20,22 @@ function Login() {
 
   const handleLogin = () => {
     setIsLoading(true);
-    // Store user in localStorage
+    // Simulate login delay
     setTimeout(() => {
       const user = {
         name: formData.name || (formData.email ? formData.email.split('@')[0] : 'User'),
         email: formData.email || '',
         phone: formData.phone || '',
-        loginMethod: loginMethod,
+        provider: loginMethod,
         loginTime: new Date().toISOString()
       };
-      localStorage.setItem('user', JSON.stringify(user));
-      setIsLoading(false);
-      navigate('/');
+      // Store user in localStorage
+      localStorage.setItem("user", JSON.stringify({
+        name: user.name,
+        email: user.email
+      }));
+      // Reload the app to trigger authentication check
+      window.location.reload();
     }, 800);
   };
 
@@ -140,7 +142,7 @@ function Login() {
                       name="email"
                       value={formData.email}
                       onChange={handleInputChange}
-                      placeholder={loginMethod === 'google' ? 'Enter your Google email' : 'Enter your Gmail address'}
+                      placeholder="Enter your email"
                       className="w-full px-4 py-3 bg-slate-800/50 border border-slate-600 rounded-lg focus:border-nutri-primary focus:ring-1 focus:ring-nutri-primary outline-none transition"
                     />
                   </div>

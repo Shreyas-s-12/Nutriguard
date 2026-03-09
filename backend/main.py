@@ -51,7 +51,7 @@ def load_chemicals_csv():
                 chemicals.append(chemical)
         
         CHEMICALS_DATA = chemicals
-        print(f"DEBUG: Loaded {len(chemicals)} chemicals from CSV")
+        print(f"DEBUG: Loaded chemicals: {len(chemicals)}")
     except Exception as e:
         print(f"ERROR: Failed to load chemicals CSV: {e}")
         CHEMICALS_DATA = []
@@ -85,6 +85,12 @@ app.add_middleware(
 # Models
 class NutritionAnalysisRequest(BaseModel):
     nutrition_text: str
+
+class FoodAnalysisRequest(BaseModel):
+    """Request model for comprehensive food analysis."""
+    ingredients: str
+    nutrition_text: Optional[str] = ""
+
 
 class NutritionValues(BaseModel):
     calories: Optional[float] = None
@@ -317,6 +323,631 @@ NUTRITION_PATTERNS = {
     'protein': re.compile(r'protein\s*[:\s]\s*(\d+)g?', re.IGNORECASE),
 }
 
+# ============================================
+# DATABASE-DRIVEN CHEMICAL DETECTION SYSTEM
+# ============================================
+
+# Build chemical index for fast lookup
+CHEMICAL_INDEX = {}  # Maps normalized terms to chemical entries
+CHEMICALS_DB = []  # List of all unique chemicals
+
+def build_chemical_index():
+    """Build an index for fast chemical detection from the database."""
+    global CHEMICAL_INDEX, CHEMICALS_DB
+    
+    # Deduplicate chemicals by name
+    seen_names = set()
+    unique_chemicals = []
+    
+    for chem in CHEMICALS_DATA:
+        name = chem.get('chemical_name', '').lower().strip()
+        if name and name not in seen_names:
+            seen_names.add(name)
+            unique_chemicals.append(chem)
+    
+    CHEMICALS_DB = unique_chemicals
+    
+    # Build index
+    for chem in CHEMICALS_DB:
+        # Add chemical name
+        name = chem.get('chemical_name', '').lower().strip()
+        if name:
+            CHEMICAL_INDEX[name] = chem
+        
+        # Add aliases (comma-separated)
+        aliases = chem.get('aliases', '').lower().strip()
+        if aliases:
+            for alias in aliases.split(','):
+                alias = alias.strip()
+                if alias:
+                    CHEMICAL_INDEX[alias] = chem
+        
+        # Add e_number (normalized)
+        e_num = chem.get('e_number_ins', '').lower().strip()
+        if e_num:
+            CHEMICAL_INDEX[e_num] = chem
+            # Also add without INS prefix
+            if e_num.startswith('e'):
+                CHEMICAL_INDEX[e_num] = chem
+            elif e_num.startswith('ins'):
+                CHEMICAL_INDEX['e' + e_num.replace('ins', '').strip()] = chem
+        
+        # Add E-number variations
+        e_num_raw = chem.get('e_number', '').strip()
+        if e_num_raw:
+            # Extract numeric part
+            if 'INS' in e_num_raw.upper():
+                num_part = ''.join(filter(str.isdigit, e_num_raw))
+                if num_part:
+                    CHEMICAL_INDEX[f'e{num_part}'] = chem
+    
+    print(f"DEBUG: Built chemical index with {len(CHEMICAL_INDEX)} entries")
+
+# Build the index after loading chemicals
+build_chemical_index()
+
+
+def detect_chemicals_from_ingredients(ingredient_text: str) -> List[Dict]:
+    """
+    Detect chemicals from ingredient text using database matching.
+    Matches by: chemical_name, aliases, e_number, INS numbers.
+    
+    Returns list of detected chemicals with their details.
+    Uses CHEMICAL_INDEX for fast lookup (STEP 10).
+    """
+    if not ingredient_text:
+        return []
+    
+    # Normalize ingredient text
+    ingredient_lower = ingredient_text.lower()
+    # Remove common prefixes and normalize
+    ingredient_normalized = re.sub(r'[^\w\s]', ' ', ingredient_lower)
+    ingredient_words = set(ingredient_normalized.split())
+    
+    detected = []
+    detected_names = set()
+    
+    # Strategy 1: Check for E-number patterns (E621, INS 621, 621) first
+    e_pattern = re.compile(r'(?:e|ins?\s*)(\d{3,4})', re.IGNORECASE)
+    e_matches = e_pattern.findall(ingredient_text)
+    
+    for e_num in e_matches:
+        e_key = f'e{e_num}'
+        if e_key in CHEMICAL_INDEX:
+            chem = CHEMICAL_INDEX[e_key]
+            name = chem.get('chemical_name', '')
+            if name not in detected_names:
+                detected.append({
+                    'chemical_name': chem.get('chemical_name', ''),
+                    'e_number': chem.get('e_number', ''),
+                    'category': chem.get('category', ''),
+                    'risk_level': chem.get('risk_level', ''),
+                    'health_concerns': chem.get('health_concerns', ''),
+                    'safe_limit': chem.get('safe_limit', ''),
+                    'match_type': 'e_number'
+                })
+                detected_names.add(name.lower())
+    
+    # Strategy 2: Check for chemical names and aliases in the index
+    # Sort by length (longest first) to match longer names first (avoid false positives)
+    # Filter to only include terms that are 4+ characters to avoid short false matches
+    sorted_terms = sorted(
+        [term for term in CHEMICAL_INDEX.keys() if len(term) >= 4],
+        key=len,
+        reverse=True
+    )
+    
+    # Track already matched term suffixes to avoid partial matches
+    matched_term_suffixes = set()
+    
+    for term in sorted_terms:
+        # Skip if this term is a suffix of an already matched longer term
+        # This prevents "sodium benzoate" from matching when "potassium benzoate" was matched
+        skip_term = False
+        for matched_suffix in matched_term_suffixes:
+            if term.endswith(matched_suffix) or term in matched_suffix:
+                skip_term = True
+                break
+        if skip_term:
+            continue
+        
+        # Create a regex pattern to match whole word/phrase
+        # Use word boundaries to avoid partial matches
+        term_pattern = re.compile(r'\b' + re.escape(term) + r'\b', re.IGNORECASE)
+        
+        if term_pattern.search(ingredient_text):
+            chem = CHEMICAL_INDEX[term]
+            name = chem.get('chemical_name', '')
+            name_lower = name.lower()
+            
+            if name_lower not in detected_names:
+                detected.append({
+                    'chemical_name': chem.get('chemical_name', ''),
+                    'e_number': chem.get('e_number', ''),
+                    'category': chem.get('category', ''),
+                    'risk_level': chem.get('risk_level', ''),
+                    'health_concerns': chem.get('health_concerns', ''),
+                    'safe_limit': chem.get('safe_limit', ''),
+                    'match_type': 'name_or_alias'
+                })
+                detected_names.add(name_lower)
+                # Add this term's key parts to matched suffixes to prevent overlapping matches
+                # For "potassium benzoate", add "benzoate" to prevent "sodium benzoate" matching
+                words_in_term = name.split()
+                if len(words_in_term) > 1:
+                    # Add the last word(s) as suffixes to prevent partial matches
+                    matched_term_suffixes.add(words_in_term[-1].lower())
+    
+    return detected
+
+
+# Risk level score mapping (STEP 3)
+RISK_LEVEL_SCORES = {
+    'low': 10,
+    'moderate': 40,
+    'high': 80,
+    'minimal': 5
+}
+
+# Additive density factor (STEP 4)
+ADDITIVE_DENSITY_BONUS = {
+    (1, 2): 5,
+    (3, 5): 15,
+    (6, 100): 30  # 6 or more
+}
+
+# Nutrition impact scoring - REVISED for high sugar handling
+# STEP 2: Higher weights for sugar and other nutrition issues
+NUTRITION_IMPACT_SCORES = {
+    'sugar': 35,       # High sugar >= 25g - increased from 20
+    'sugar_moderate': 20,  # Moderate sugar 10-24g - NEW
+    'added_sugar': 35,  # Added sugar - new
+    'sodium': 20,       # High sodium - increased from 15
+    'saturated_fat': 20,  # Saturated fat - increased from 15
+    'trans_fat': 40     # Trans fat - increased from 30
+}
+
+# Nutrition thresholds for detection - REVISED for stricter sugar detection
+# STEP 1: Updated thresholds to detect high sugar correctly
+NUTRITION_DETECTION_THRESHOLDS = {
+    'sugar': 25,       # g - HIGH sugar threshold increased from 15
+    'sugar_moderate': 10,  # g - MODERATE sugar threshold - NEW
+    'added_sugar': 10, # g - Added sugar detection
+    'sodium': 600,     # mg - high sodium
+    'saturated_fat': 5,  # g - high saturated fat
+    'trans_fat': 0.5   # g - any trans fat is concerning
+}
+
+
+def calculate_comprehensive_risk_score(detected_chemicals: List[Dict], nutrition_values: Dict[str, float], ingredient_text: str = "") -> Dict[str, Any]:
+    """
+    Calculate risk score using the new comprehensive formula.
+    
+    STEPS:
+    1. Sum individual chemical risk scores (Low=10, Moderate=40, High=80)
+    2. Add additive density factor based on count
+    3. Add nutrition impact scores (STEP 2: Higher weights)
+    4. Add automatic sugar escalation for >= 25g (STEP 6)
+    5. Normalize to 0-100
+    6. Apply escalation rules (STEP 3)
+    7. Determine risk level from score with combined formula (STEP 4 & 5)
+    
+    Risk Level Thresholds (STEP 5):
+    - 0-39: Low Risk
+    - 40-69: Moderate Risk
+    - 70-100: High Risk
+    """
+    total_score = 0
+    
+    # STEP 1: Sum individual chemical risk scores
+    chemical_score = 0
+    for chem in detected_chemicals:
+        risk_level = chem.get('risk_level', '').lower().strip()
+        score = RISK_LEVEL_SCORES.get(risk_level, 0)
+        chemical_score += score
+    
+    total_score += chemical_score
+    
+    # STEP 2: Add additive density factor
+    num_additives = len(detected_chemicals)
+    density_bonus = 0
+    for (min_add, max_add), bonus in ADDITIVE_DENSITY_BONUS.items():
+        if min_add <= num_additives <= max_add:
+            total_score += bonus
+            density_bonus = bonus
+            break
+    
+    # STEP 2 & 3: Add nutrition impact with detection for added sugar
+    nutrition_issues = []
+    nutrition_bonus = 0
+    high_nutrition_issues = []  # Track HIGH issues for escalation
+    
+    # Detect added sugar
+    added_sugar_detected = False
+    for pattern in ADDED_SUGAR_PATTERNS:
+        if pattern.search(ingredient_text):
+            added_sugar_detected = True
+            break
+    
+    # Calculate added sugar value
+    if added_sugar_detected and nutrition_values.get('sugar'):
+        nutrition_values['added_sugar'] = nutrition_values['sugar'] * 0.8
+    
+    # Check for HIGH sugar first (>= 25g)
+    sugar_value = nutrition_values.get('sugar')
+    if sugar_value is not None:
+        if sugar_value >= NUTRITION_DETECTION_THRESHOLDS.get('sugar', 25):
+            # High sugar
+            total_score += NUTRITION_IMPACT_SCORES.get('sugar', 35)
+            nutrition_bonus += NUTRITION_IMPACT_SCORES.get('sugar', 35)
+            nutrition_issues.append('Sugar (High)')
+            high_nutrition_issues.append('sugar')
+        elif sugar_value >= NUTRITION_DETECTION_THRESHOLDS.get('sugar_moderate', 10):
+            # Moderate sugar - add points but don't mark as HIGH issue
+            total_score += NUTRITION_IMPACT_SCORES.get('sugar_moderate', 20)
+            nutrition_bonus += NUTRITION_IMPACT_SCORES.get('sugar_moderate', 20)
+            nutrition_issues.append('Sugar (Moderate)')
+    
+    # Check for other nutrients
+    for nutrient, bonus_score in NUTRITION_IMPACT_SCORES.items():
+        # Skip sugar as we handled it above
+        if nutrient in ['sugar', 'sugar_moderate']:
+            continue
+        threshold = NUTRITION_DETECTION_THRESHOLDS.get(nutrient, 0)
+        value = nutrition_values.get(nutrient)
+        if value is not None and value >= threshold:
+            total_score += bonus_score
+            nutrition_bonus += bonus_score
+            # Store with underscore to space conversion for display
+            display_name = nutrient.replace('_', ' ').title()
+            nutrition_issues.append(display_name)
+            high_nutrition_issues.append(nutrient)
+    
+    # STEP 6: Ensure sugar >= 25g is treated seriously - auto add 30 points
+    # This ensures high sugar foods cannot be classified as LOW risk
+    sugar_value = nutrition_values.get('sugar')
+    sugar_escalation = 0
+    if sugar_value is not None and sugar_value >= 25:
+        sugar_escalation = 30
+        total_score += sugar_escalation
+    
+    # Additional escalation for moderate sugar (10-24g) to ensure at least MODERATE risk
+    # This ensures foods with moderate sugar are not classified as LOW risk
+    if sugar_value is not None and 10 <= sugar_value < 25:
+        # Add extra points to ensure moderate sugar leads to at least MODERATE
+        total_score += 20  # Bring score to at least 40
+        sugar_escalation = 20
+    processing_risk = min(num_additives * 3, 30)  # Cap at 30
+    
+    # Normalize and calculate component scores for combined formula
+    # STEP 4: Weighted formula
+    # chemical_risk * 0.35 + nutrition_risk * 0.35 + sugar_risk * 0.20 + processing_risk * 0.10
+    chemical_component = min(chemical_score, 100) * 0.35
+    nutrition_component = min(nutrition_bonus * 2, 100) * 0.35  # Scale up nutrition
+    sugar_component = min((sugar_value or 0) * 2, 100) * 0.20 if sugar_value else 0
+    processing_component = processing_risk * 0.10
+    
+    # Use the higher of total_score or weighted formula
+    weighted_score = chemical_component + nutrition_component + sugar_component + processing_component
+    final_score = max(min(100, total_score), min(100, int(weighted_score)))
+    
+    # STEP 3: Apply escalation rules
+    # If any HIGH nutrition issue exists, overall risk must be at least MODERATE
+    # If multiple HIGH nutrition issues exist, overall risk must be HIGH
+    
+    # Determine initial risk level
+    if final_score >= 70:
+        preliminary_level = 'High'
+    elif final_score >= 40:
+        preliminary_level = 'Moderate'
+    else:
+        preliminary_level = 'Low'
+    
+    # STEP 3: Escalation rules based on HIGH nutrition issues
+    high_nutrient_count = len(high_nutrition_issues)
+    
+    if high_nutrient_count >= 2:
+        # Multiple HIGH nutrition issues → HIGH
+        final_risk_level = 'High'
+        final_score = max(final_score, 70)  # Ensure at least 70
+    elif high_nutrient_count == 1 and preliminary_level == 'Low':
+        # One HIGH nutrition issue but LOW → escalate to MODERATE
+        final_risk_level = 'Moderate'
+        final_score = max(final_score, 40)  # Ensure at least 40
+    elif high_nutrient_count >= 1 and preliminary_level in ['Low', 'Moderate']:
+        # HIGH nutrition issue exists → ensure at least MODERATE
+        final_risk_level = 'Moderate'
+        final_score = max(final_score, 40)
+    else:
+        final_risk_level = preliminary_level
+    
+    # Final cap at 100
+    final_score = min(100, final_score)
+    
+    return {
+        'risk_score': final_score,
+        'risk_level': final_risk_level,
+        'total_additives': num_additives,
+        'nutrition_issues': nutrition_issues,
+        'high_nutrition_issues': high_nutrition_issues,
+        'chemical_score': chemical_score,
+        'density_bonus': density_bonus,
+        'nutrition_bonus': nutrition_bonus,
+        'sugar_escalation': sugar_escalation,
+        'processing_risk': processing_risk,
+        'weighted_components': {
+            'chemical': chemical_component,
+            'nutrition': nutrition_component,
+            'sugar': sugar_component,
+            'processing': processing_component
+        }
+    }
+
+
+def calculate_priority_based_risk(detected_chemicals: List[Dict]) -> Dict[str, Any]:
+    """
+    Calculate risk using priority logic:
+    - If ANY high-risk chemical exists → HIGH
+    - Else if 2+ moderate chemicals → MODERATE
+    - Else if only low/minimal chemicals → LOW
+    - Else → LOW (no chemicals detected)
+    
+    DEPRECATED: Use calculate_comprehensive_risk_score instead.
+    """
+    if not detected_chemicals:
+        return {
+            'risk_level': 'Low',
+            'risk_score': 0,
+            'high_count': 0,
+            'moderate_count': 0,
+            'low_count': 0
+        }
+    
+    high_count = 0
+    moderate_count = 0
+    low_count = 0
+    
+    for chem in detected_chemicals:
+        risk = chem.get('risk_level', '').lower()
+        if risk == 'high':
+            high_count += 1
+        elif risk == 'moderate':
+            moderate_count += 1
+        else:  # low or minimal
+            low_count += 1
+    
+    # Priority logic
+    if high_count > 0:
+        risk_level = 'High'
+    elif moderate_count >= 2:
+        risk_level = 'Moderate'
+    else:
+        risk_level = 'Low'
+    
+    return {
+        'risk_level': risk_level,
+        'high_count': high_count,
+        'moderate_count': moderate_count,
+        'low_count': low_count
+    }
+
+
+# Nutrition thresholds for extreme values - REVISED
+NUTRITION_THRESHOLDS = {
+    'sodium': {'extreme': 2000, 'high': 800, 'moderate': 400},  # mg
+    'sugar': {'extreme': 50, 'high': 25, 'moderate': 10},  # g - revised for stricter detection
+    'added_sugar': {'extreme': 30, 'high': 15, 'moderate': 5},  # g - NEW
+    'saturated_fat': {'extreme': 15, 'high': 5, 'moderate': 2},  # g
+    'trans_fat': {'extreme': 2, 'high': 1, 'moderate': 0.5}  # g
+}
+
+# Added sugar patterns for detection
+ADDED_SUGAR_PATTERNS = [
+    re.compile(r'(?:added|sweetener|syrup|molasses|honey|high fructose corn syrup)', re.IGNORECASE),
+    re.compile(r'(?:sucrose|glucose|fructose|dextrose|maltose|lactose)', re.IGNORECASE),
+]
+
+
+def assess_nutrition_risk(nutrition_text: str, ingredient_text: str = "") -> Dict[str, Any]:
+    """
+    Assess nutrition risk from nutrition facts text.
+    Returns nutrition issues and risk level adjustment.
+    
+    STEP 1: Ensures high sugar is detected correctly (>=25g = High)
+    STEP 1: Added detection for added sugar.
+    """
+    issues = []
+    extreme_count = 0
+    high_count = 0
+    high_nutrition_issues = []  # Track HIGH level issues for escalation
+    
+    # Extract values
+    values = extract_nutrition_values(nutrition_text)
+    
+    # Detect added sugar from ingredient text
+    added_sugar_detected = False
+    for pattern in ADDED_SUGAR_PATTERNS:
+        if pattern.search(ingredient_text):
+            added_sugar_detected = True
+            break
+    
+    # If added sugar keywords found, estimate from total sugar
+    if added_sugar_detected and values.get('sugar'):
+        # Assume at least 80% of sugar is added sugar if keywords detected
+        values['added_sugar'] = values['sugar'] * 0.8
+    else:
+        values['added_sugar'] = None
+    
+    for nutrient, thresholds in NUTRITION_THRESHOLDS.items():
+        value = values.get(nutrient)
+        if value is not None:
+            if value >= thresholds['extreme']:
+                issues.append(f"Extreme {nutrient} content: {value}")
+                extreme_count += 1
+                high_count += 1
+                high_nutrition_issues.append(nutrient)
+            elif value >= thresholds['high']:
+                issues.append(f"High {nutrient} content: {value}")
+                high_count += 1
+                high_nutrition_issues.append(nutrient)
+            elif value >= thresholds['moderate']:
+                issues.append(f"Moderate {nutrient} content: {value}")
+    
+    # Determine if nutrition should increase risk
+    # Extreme nutrition increases risk, but doesn't override high chemical risk
+    risk_increase = 'none'
+    if extreme_count > 0:
+        risk_increase = 'extreme'
+    elif high_count > 0:
+        risk_increase = 'high'
+    
+    return {
+        'issues': issues,
+        'risk_increase': risk_increase,
+        'extreme_count': extreme_count,
+        'high_count': high_count,
+        'high_nutrition_issues': high_nutrition_issues,  # For escalation
+        'values': values
+    }
+
+
+def calculate_risk_score(chemical_risk: Dict, nutrition_risk: Dict, detected_chemicals: List[Dict]) -> int:
+    """
+    Calculate numeric risk score (0-100).
+    
+    Factors:
+    - Chemical risk (base score)
+    - Number of additives
+    - Nutrition issues
+    - Processing level
+    """
+    score = 0
+    
+    # Base score from chemical risk level
+    risk_level = chemical_risk.get('risk_level', 'Low')
+    if risk_level == 'High':
+        score += 50
+    elif risk_level == 'Moderate':
+        score += 25
+    elif risk_level == 'Low':
+        score += 10
+    
+    # Add points for number of chemicals
+    num_chemicals = len(detected_chemicals)
+    if num_chemicals > 0:
+        score += min(num_chemicals * 5, 20)  # Cap at 20
+    
+    # Add points for high-risk chemicals
+    high_count = chemical_risk.get('high_count', 0)
+    moderate_count = chemical_risk.get('moderate_count', 0)
+    
+    score += high_count * 10  # Each high-risk chemical adds 10
+    score += moderate_count * 3  # Each moderate chemical adds 3
+    
+    # Add points for nutrition issues
+    nutrition_issues = nutrition_risk.get('issues', [])
+    if nutrition_risk.get('risk_increase') == 'extreme':
+        score += 20
+    elif nutrition_risk.get('risk_increase') == 'high':
+        score += 10
+    
+    # Cap at 100
+    return min(score, 100)
+
+
+def get_diseases_from_chemicals(detected_chemicals: List[Dict]) -> List[str]:
+    """
+    Extract health concerns from detected chemicals.
+    Returns deduplicated list of diseases/health issues.
+    """
+    diseases = set()
+    
+    for chem in detected_chemicals:
+        concerns = chem.get('health_concerns', '')
+        if concerns:
+            # Split by comma and clean up
+            for concern in concerns.split(','):
+                concern = concern.strip()
+                if concern and len(concern) > 2:  # Filter out very short strings
+                    diseases.add(concern)
+    
+    return sorted(list(diseases))
+
+
+def generate_recommendation(risk_level: str, detected_chemicals: List[Dict], nutrition_issues: List[str]) -> str:
+    """Generate a recommendation based on the analysis."""
+    if risk_level == 'High':
+        high_risk_chemicals = [c['chemical_name'] for c in detected_chemicals 
+                              if c.get('risk_level', '').lower() == 'high']
+        if high_risk_chemicals:
+            return f"⚠️ HIGH RISK: This product contains high-risk additives ({', '.join(high_risk_chemicals[:3])}). Consider avoiding or limiting consumption."
+        return "⚠️ HIGH RISK: This product has significant health concerns. Consider reducing consumption."
+    
+    elif risk_level == 'Moderate':
+        return "⚠️ MODERATE RISK: This product contains some additives that may be a concern for frequent consumption. Monitor your intake."
+    
+    elif risk_level == 'Low':
+        if detected_chemicals:
+            return "✅ LOW RISK: This product appears safe for occasional consumption with minor additives."
+        return "✅ LOW RISK: No significant additives detected. This appears to be a safer choice."
+    
+    return "✅ This product appears to be a safe choice."
+
+
+def analyze_food_comprehensive(ingredient_text: str, nutrition_text: str = "") -> Dict[str, Any]:
+    """
+    Comprehensive food analysis using database-driven detection.
+    Returns structured analysis with risk level, score, detected chemicals, etc.
+    
+    Uses the new comprehensive scoring system:
+    - Chemical scores: Low=10, Moderate=40, High=80
+    - Additive density: 1-2:+5, 3-5:+15, 6+:+30
+    - Nutrition impact: High sugar +35, High sodium +20, High sat fat +20, Trans fat +40
+    - Sugar escalation: +30 for sugar >= 25g
+    - Risk levels: Low 0-39, Moderate 40-69, High 70-100
+    - Escalation: HIGH nutrition issue → at least MODERATE, multiple HIGH → HIGH
+    """
+    # Step 1: Detect ALL chemicals from ingredients (STEP 2)
+    detected_chemicals = detect_chemicals_from_ingredients(ingredient_text)
+    
+    # Step 2: Extract nutrition values
+    nutrition_values = extract_nutrition_values(nutrition_text)
+    
+    # Step 3-7: Calculate comprehensive risk score using new formula
+    # Pass ingredient_text for added sugar detection
+    risk_result = calculate_comprehensive_risk_score(detected_chemicals, nutrition_values, ingredient_text)
+    
+    # Step 8: Get diseases from chemicals (health concerns)
+    diseases = get_diseases_from_chemicals(detected_chemicals)
+    
+    # Generate recommendation based on new risk level
+    recommendation = generate_recommendation(
+        risk_result['risk_level'], 
+        detected_chemicals, 
+        risk_result['nutrition_issues']
+    )
+    
+    # Build response with all required fields (STEP 9)
+    return {
+        'risk_score': risk_result['risk_score'],
+        'risk_level': risk_result['risk_level'],
+        'detected_chemicals': detected_chemicals,
+        'total_additives': risk_result['total_additives'],  # STEP 9: Add total_additives
+        'diseases': diseases,
+        'nutrition_issues': risk_result['nutrition_issues'],
+        'recommendation': recommendation,
+        'chemical_summary': {
+            'chemical_score': risk_result['chemical_score'],
+            'density_bonus': risk_result['density_bonus'],
+            'nutrition_bonus': risk_result['nutrition_bonus'],
+            'total_count': len(detected_chemicals)
+        },
+        'nutrition_summary': {
+            'values': nutrition_values,
+            'issues_count': len(risk_result['nutrition_issues'])
+        }
+    }
+
 # Ingredient detection keywords
 INGREDIENT_KEYWORDS = {
     # Artificial sweeteners
@@ -515,7 +1146,7 @@ def analyze_factors(nutrition_text: str, ingredient_text: str = "") -> Dict[str,
     
     return {
         "detected_factors": detected_factors,
-        "possible_long_term_health_effects": health_effects,
+        "health_effects": health_effects,
         "analysis_summary": summary
     }
 
@@ -529,7 +1160,7 @@ async def global_exception_handler(request, exc):
         content={
             "detail": "An unexpected error occurred. Please try again.",
             "detected_factors": [],
-            "possible_long_term_health_effects": [],
+            "health_effects": [],
             "analysis_summary": "Unable to process request. Please try again."
         }
     )
@@ -656,14 +1287,11 @@ async def analyze_nutrition(request: NutritionAnalysisRequest):
     Returns:
     {
       "detected_factors": ["sodium", "sugar", "aspartame"],
-      "possible_long_term_health_effects": ["hypertension", "type 2 diabetes", "headaches"],
+      "health_effects": ["hypertension", "type 2 diabetes", "headaches"],
       "analysis_summary": "This product contains artificial sweeteners..."
     }
     """
-    print("\n" + "="*50)
-    print("DEBUG: Received analyze-nutrition request")
-    print(f"DEBUG: nutrition_text length: {len(request.nutrition_text)}")
-    print("="*50 + "\n")
+    print("Received nutrition text:", request.nutrition_text)
     
     try:
         # Run factor analysis
@@ -671,7 +1299,7 @@ async def analyze_nutrition(request: NutritionAnalysisRequest):
         
         print("DEBUG: Analysis complete:")
         print(f"  - Detected Factors: {analysis_result['detected_factors']}")
-        print(f"  - Health Effects: {analysis_result['possible_long_term_health_effects']}")
+        print(f"  - Health Effects: {analysis_result['health_effects']}")
         print("="*50 + "\n")
         
         return analysis_result
@@ -684,3 +1312,62 @@ async def analyze_nutrition(request: NutritionAnalysisRequest):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+# ============================================
+# NEW COMPREHENSIVE ANALYSIS ENDPOINT
+# ============================================
+
+@app.post("/analyze-food")
+async def analyze_food(request: FoodAnalysisRequest):
+    """
+    Comprehensive food analysis using database-driven chemical detection.
+    
+    This endpoint uses the priority-based risk scoring system:
+    - If ANY high-risk chemical exists → HIGH
+    - Else if 2+ moderate chemicals → MODERATE  
+    - Else if only low/minimal chemicals → LOW
+    
+    Accepts JSON:
+    {
+      "ingredients": "water, sugar, aspartame, citric acid...",
+      "nutrition_text": "Calories 0 Sodium 40mg..."
+    }
+    
+    Returns:
+    {
+      "risk_level": "High",
+      "risk_score": 85,
+      "detected_chemicals": [...],
+      "diseases": [...],
+      "nutrition_issues": [...],
+      "recommendation": "..."
+    }
+    """
+    print("="*60)
+    print("ANALYZE FOOD ENDPOINT CALLED")
+    print(f"  Ingredients: {request.ingredients[:100]}...")
+    print(f"  Nutrition text: {request.nutrition_text[:100] if request.nutrition_text else 'None'}...")
+    
+    try:
+        # Run comprehensive analysis
+        result = analyze_food_comprehensive(
+            ingredient_text=request.ingredients,
+            nutrition_text=request.nutrition_text or ""
+        )
+        
+        print(f"\n  Results:")
+        print(f"    Risk Level: {result['risk_level']}")
+        print(f"    Risk Score: {result['risk_score']}")
+        print(f"    Detected Chemicals: {len(result['detected_chemicals'])}")
+        print(f"    Diseases: {len(result['diseases'])}")
+        print(f"    Nutrition Issues: {len(result['nutrition_issues'])}")
+        print("="*60 + "\n")
+        
+        return result
+    
+    except Exception as e:
+        print(f"DEBUG: Error in analyze_food: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")

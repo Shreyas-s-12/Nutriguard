@@ -13,7 +13,7 @@ Smart Food Safety & Chemical Risk Awareness Platform
 ## ✨ Features
 
 - 📷 **Food Label Scanner** - Upload images and extract text using Tesseract OCR
-- 🔬 **Chemical Detection** - Detects 300+ real food additives and E-numbers
+- 🔬 **Chemical Detection** - Detects 1000+ real food additives and E-numbers
 - 🍬 **Hidden Sugar Detection** - Identifies 60+ sugar aliases and alternative names
 - 📊 **Health Risk Scoring** - Calculates 0-100 risk score based on multiple factors
 - 📋 **Nutrition Analysis** - Analyzes sugar, sodium, fat, and calorie content
@@ -64,7 +64,7 @@ NutriGuard-AI/
 │   ├── config.yaml          # Configuration (risk weights, thresholds)
 │   ├── requirements.txt     # Python dependencies
 │   └── data/
-│       ├── chemicals.csv    # 300+ food additives database
+│       ├── chemicals.csv    # 1000+ food additives database
 │       └── sugar_aliases.json # 60+ sugar aliases
 ├── frontend/
 │   ├── package.json         # Node dependencies
@@ -197,7 +197,7 @@ Risk Levels:
 
 ## 🔬 Chemical Database
 
-The system includes 300+ real food additives from categories:
+The system includes 1000+ real food additives from categories:
 - Preservatives
 - Artificial Colors
 - Artificial Sweeteners

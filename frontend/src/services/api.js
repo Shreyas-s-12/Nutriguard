@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'http://127.0.0.1:8001';
+const API_URL = 'http://127.0.0.1:8000';
 
 const api = axios.create({
   baseURL: API_URL
@@ -9,6 +9,16 @@ const api = axios.create({
 // Analyze nutrition facts text
 export const analyzeNutrition = async (nutritionText) => {
   const response = await api.post('/analyze-nutrition', {
+    nutrition_text: nutritionText
+  });
+
+  return response.data;
+};
+
+// Comprehensive food analysis using database-driven detection
+export const analyzeFood = async (ingredients, nutritionText = '') => {
+  const response = await api.post('/analyze-food', {
+    ingredients: ingredients,
     nutrition_text: nutritionText
   });
 

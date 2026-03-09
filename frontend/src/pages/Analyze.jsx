@@ -1,17 +1,42 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Navbar from '../components/Navbar';
-import { analyzeNutrition } from '../services/api';
+import Layout from '../components/Layout';
+import { analyzeFood } from '../services/api';
 
 function Analyze() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [nutritionText, setNutritionText] = useState('');
-  const [ingredientText, setIngredientText] = useState('');
+  const [inputText, setInputText] = useState('');
   const [error, setError] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const textareaRef = useRef(null);
+
+  const parseInput = (text) => {
+    // Split into ingredients and nutrition facts sections
+    const ingredientsMatch = text.toLowerCase().includes('ingredient');
+    let ingredients = '';
+    let nutritionText = '';
+    
+    if (ingredientsMatch) {
+      // Try to extract ingredients
+      const ingredientLines = text.split(/\n|ingredients/i).slice(1);
+      if (ingredientLines.length > 0) {
+        const splitPattern = new RegExp('(nutrition|facts|calories|serving|amount)', 'i');
+        ingredients = ingredientLines.join(' ').split(splitPattern);
+        ingredients = ingredients[0] || '';
+      }
+    }
+    
+    // If no separate sections, assume the whole text might be ingredients
+    if (!ingredients.trim()) {
+      ingredients = text;
+    }
+    
+    return { ingredients: ingredients.trim(), nutritionText: nutritionText.trim() };
+  };
 
   const handleAnalyze = async () => {
-    if (!nutritionText.trim() && !ingredientText.trim()) {
+    if (!inputText.trim()) {
       setError('Please paste nutrition facts or ingredients to analyze.');
       return;
     }
@@ -20,12 +45,13 @@ function Analyze() {
     setError(null);
     
     try {
-      console.log("Sending request to /analyze-nutrition");
+      console.log("Sending food analysis request");
       
-      // Combine nutrition text and ingredient text
-      const combinedText = nutritionText + '\n' + ingredientText;
+      // Parse input to extract ingredients and nutrition facts
+      const { ingredients, nutritionText } = parseInput(inputText);
       
-      const result = await analyzeNutrition(combinedText);
+      // Use the new analyzeFood function with both ingredients and nutrition text
+      const result = await analyzeFood(ingredients, nutritionText || inputText);
       
       console.log('Analysis result received:', result);
       
@@ -51,118 +77,209 @@ function Analyze() {
     }
   };
 
-  const exampleNutrition = `Amount Per Serving
-Calories 140
-Total Fat 8g
-Saturated Fat 1g
-Sodium 180mg
-Total Carbohydrate 37g
-Total Sugars 12g
-Protein 2g`;
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
 
-  const exampleIngredients = `Water, High Fructose Corn Syrup, Citric Acid, Sodium Benzoate, 
-Potassium Sorbate, Aspartame, Natural Flavor, Phosphoric Acid, Caramel Color`;
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    const text = e.dataTransfer.getData('text/plain');
+    if (text) {
+      setInputText((prev) => prev + (prev ? '\n\n' : '') + text);
+    }
+  };
+
+  const loadExample = () => {
+    setInputText(`Serving Size: 1 Can (355ml)
+Calories: 0
+Total Fat: 0g
+Sodium: 40mg
+Total Carbohydrate: 0g
+Sugars: 0g
+Protein: 0g
+
+Ingredients: Carbonated Water, Citric Acid, Natural Flavors, Aspartame, Potassium Benzoate, Phosphoric Acid`);
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800">
-      <Navbar />
-      
-      <main className="max-w-4xl mx-auto px-4 py-12">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold mb-4">
-            <span className="gradient-text">Food Analysis</span>
+    <Layout>
+      <div className="max-w-4xl mx-auto">
+        {/* Header */}
+        <div className="text-center mb-10">
+          <div className="inline-flex items-center px-4 py-2 bg-cyan-500/10 border border-cyan-500/20 rounded-full text-cyan-400 text-sm mb-4">
+            <span className="w-2 h-2 bg-cyan-400 rounded-full mr-2 animate-pulse"></span>
+            AI-Powered Analysis
+          </div>
+          <h1 className="text-4xl font-bold mb-3">
+            <span className="bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+              Analyze Food Safety
+            </span>
           </h1>
           <p className="text-slate-400 text-lg">
-            Paste nutrition facts and ingredients to analyze health risks
+            Paste nutrition facts or ingredients to detect harmful additives and health risks
           </p>
         </div>
 
         {error && (
-          <div className="mb-8 p-4 bg-red-500/20 border border-red-500/30 rounded-lg text-red-400 text-center">
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 flex items-center">
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
             {error}
           </div>
         )}
 
-        <div className="glass rounded-2xl p-6 mb-8">
-          <label className="block text-lg font-semibold mb-4 text-white">
-            Nutrition Facts
-          </label>
-          <textarea
-            value={nutritionText}
-            onChange={(e) => setNutritionText(e.target.value)}
-            placeholder="Paste nutrition facts here...
+        {/* Main Analysis Card */}
+        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
+          {/* Section 1 - Nutrition Input */}
+          <div className="p-8 border-b border-white/10">
+            <div className="flex items-center mb-4">
+              <div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center mr-3">
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold text-white">Nutrition Facts & Ingredients</h2>
+                <p className="text-sm text-slate-400">Paste or type the food label information</p>
+              </div>
+            </div>
+            
+            <div 
+              className={`relative border-2 border-dashed rounded-2xl transition-all duration-300 ${
+                isDragging 
+                  ? 'border-cyan-500 bg-cyan-500/10' 
+                  : 'border-white/10 hover:border-white/20'
+              }`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
+              <textarea
+                ref={textareaRef}
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                placeholder={`Paste Nutrition Facts or Ingredients here...
 
 Example:
-Amount Per Serving
-Calories 140
-Total Fat 8g
-Sodium 180mg
-Total Sugars 12g"
-            className="w-full h-40 bg-slate-800/50 border border-slate-700 rounded-lg p-4 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-nutri-primary focus:border-transparent resize-none mb-4"
-          />
-          
-          <label className="block text-lg font-semibold mb-4 text-white">
-            Ingredients (Optional)
-          </label>
-          <textarea
-            value={ingredientText}
-            onChange={(e) => setIngredientText(e.target.value)}
-            placeholder="Paste ingredients list here...
+Serving Size: 1 Can
+Calories: 0
+Sodium: 40mg
+Ingredients: Carbonated Water, Aspartame, Citric Acid`}
+                className="w-full h-64 bg-transparent border-0 p-6 text-white placeholder-slate-500 focus:outline-none focus:ring-0 resize-none font-mono text-sm leading-relaxed"
+              />
+              
+              {/* Drag overlay */}
+              {isDragging && (
+                <div className="absolute inset-0 flex items-center justify-center bg-cyan-500/20 rounded-2xl">
+                  <div className="text-center">
+                    <svg className="w-12 h-12 text-cyan-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                    <p className="text-cyan-400 font-medium">Drop to add text</p>
+                  </div>
+                </div>
+              )}
+            </div>
 
-Example:
-Water, Sugar, Sodium Benzoate, Aspartame, Phosphoric Acid"
-            className="w-full h-40 bg-slate-800/50 border border-slate-700 rounded-lg p-4 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-nutri-secondary focus:border-transparent resize-none"
-          />
-          
-          <div className="mt-4 flex gap-4">
+            <div className="flex items-center justify-between mt-4 text-sm text-slate-500">
+              <span>Supports drag & drop text</span>
+              <button
+                onClick={loadExample}
+                className="text-cyan-400 hover:text-cyan-300 transition-colors flex items-center"
+              >
+                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                Load Example
+              </button>
+            </div>
+          </div>
+
+          {/* Section 2 - Analyze Button */}
+          <div className="p-8 bg-white/5">
             <button
               onClick={handleAnalyze}
-              disabled={loading || (!nutritionText.trim() && !ingredientText.trim())}
-              className="flex-1 bg-nutri-primary hover:bg-nutri-primary/90 disabled:bg-slate-700 disabled:text-slate-500 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
+              disabled={loading || !inputText.trim()}
+              className={`w-full relative overflow-hidden group ${
+                loading ? 'opacity-70 cursor-not-allowed' : ''
+              }`}
             >
-              {loading ? 'Analyzing...' : 'Analyze Food'}
-            </button>
-            <button
-              onClick={() => {
-                setNutritionText(exampleNutrition);
-                setIngredientText(exampleIngredients);
-              }}
-              className="px-6 py-3 border border-slate-600 text-slate-300 hover:bg-slate-800 rounded-lg transition-colors"
-            >
-              Load Example
+              {/* Button Background */}
+              <div className={`absolute inset-0 bg-gradient-to-r from-cyan-500 via-purple-500 to-pink-500 transition-all duration-300 ${
+                loading ? '' : 'group-hover:scale-[1.02]'
+              }`} />
+              
+              {/* Shine Effect */}
+              <div className="absolute inset-0 opacity-0 group-hover:opacity-20 transition-opacity duration-300">
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+              </div>
+              
+              {/* Button Content */}
+              <div className="relative px-8 py-5 flex items-center justify-center space-x-3">
+                {loading ? (
+                  <>
+                    <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span className="text-lg font-semibold text-white">Analyzing ingredients...</span>
+                    <div className="flex space-x-1">
+                      <span className="w-2 h-2 bg-white/70 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="w-2 h-2 bg-white/70 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <span className="w-2 h-2 bg-white/70 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                    <span className="text-lg font-semibold text-white">Analyze Food Safety</span>
+                  </>
+                )}
+              </div>
             </button>
           </div>
         </div>
 
         {/* Tips Section */}
-        <div className="glass rounded-2xl p-6">
-          <h3 className="text-xl font-semibold mb-4 flex items-center">
-            <span className="w-8 h-8 bg-nutri-accent/20 rounded-lg flex items-center justify-center mr-2">
-              💡
-            </span>
-            Tips for Better Analysis
-          </h3>
-          <div className="grid md:grid-cols-2 gap-4 text-slate-300">
-            <div className="flex items-start space-x-2">
-              <span className="text-nutri-primary">•</span>
-              <p>Copy the entire nutrition facts label for accurate nutrient detection</p>
+        <div className="mt-8 grid md:grid-cols-2 gap-4">
+          <div className="bg-white/5 backdrop-blur-lg border border-white/10 rounded-2xl p-5">
+            <div className="flex items-center mb-3">
+              <div className="w-8 h-8 bg-green-500/20 rounded-lg flex items-center justify-center mr-2">
+                <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h3 className="font-medium text-white">Best Results</h3>
             </div>
-            <div className="flex items-start space-x-2">
-              <span className="text-nutri-primary">•</span>
-              <p>Include the ingredients list to detect additives and preservatives</p>
+            <p className="text-sm text-slate-400">
+              Include both nutrition facts and ingredients list for comprehensive analysis
+            </p>
+          </div>
+          
+          <div className="bg-white/5 backdrop-blur-lg border border-white/10 rounded-2xl p-5">
+            <div className="flex items-center mb-3">
+              <div className="w-8 h-8 bg-purple-500/20 rounded-lg flex items-center justify-center mr-2">
+                <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h3 className="font-medium text-white">What We Detect</h3>
             </div>
-            <div className="flex items-start space-x-2">
-              <span className="text-nutri-primary">•</span>
-              <p>Make sure to include units (mg, g)</p>
-            </div>
-            <div className="flex items-start space-x-2">
-              <span className="text-nutri-primary">•</span>
-              <p>Our system maps ingredients to potential long-term health effects</p>
-            </div>
+            <p className="text-sm text-slate-400">
+              Harmful additives, hidden sugars, preservatives, and nutritional concerns
+            </p>
           </div>
         </div>
-      </main>
-    </div>
+      </div>
+    </Layout>
   );
 }
 

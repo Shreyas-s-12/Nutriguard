@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
-import Navbar from '../components/Navbar';
+import Layout from '../components/Layout';
+import ChemicalCard from '../components/ChemicalCard';
+import ChemicalModal from '../components/ChemicalModal';
 import { getChemicals } from '../services/api';
 
 function Chemicals() {
@@ -9,18 +11,20 @@ function Chemicals() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRisk, setFilterRisk] = useState('all');
   const [filterCategory, setFilterCategory] = useState('all');
+  const [selectedChemical, setSelectedChemical] = useState(null);
 
   // Fetch chemicals when filters change
   useEffect(() => {
-    fetchChemicals();
+    const timeoutId = setTimeout(() => {
+      fetchChemicals();
+    }, 300);
+    return () => clearTimeout(timeoutId);
   }, [searchTerm, filterRisk, filterCategory]);
 
   const fetchChemicals = async () => {
     setLoading(true);
     try {
-      // Pass the filter values to backend
       const data = await getChemicals(searchTerm, filterRisk, filterCategory, 100);
-      // Backend returns { total: X, chemicals: [...] }
       setChemicals(data.chemicals || []);
       setTotal(data.total || 0);
     } catch (err) {
@@ -35,139 +39,132 @@ function Chemicals() {
   // Get unique categories from current results
   const categories = [...new Set(chemicals.map(c => c.category).filter(Boolean))];
 
-  // Note: Filtering is now done on the backend, no client-side filtering needed
-
-  const getRiskColor = (level) => {
-    switch(level?.toLowerCase()) {
-      case 'high': return 'text-high-risk bg-high-risk/20';
-      case 'moderate': return 'text-moderate bg-moderate/20';
-      case 'low': return 'text-blue-400 bg-blue-400/20';
-      default: return 'text-slate-400 bg-slate-700';
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800">
-        <Navbar />
-        <div className="flex items-center justify-center h-[60vh]">
-          <div className="spinner w-12 h-12"></div>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800">
-      <Navbar />
-      
-      <main className="max-w-7xl mx-auto px-4 py-12">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold mb-4">
-            <span className="gradient-text">Chemical Database</span>
-          </h1>
-          <p className="text-slate-400 text-lg">
-            Explore {chemicals.length}+ food additives and their health effects
-          </p>
+    <Layout>
+      {/* Header */}
+      <div className="mb-8">
+        <div className="flex items-center mb-2">
+          <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
+          <span className="text-sm text-slate-400">Database Active</span>
         </div>
+        <h1 className="text-4xl font-bold mb-3">
+          <span className="bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+            Chemical Database
+          </span>
+        </h1>
+        <p className="text-slate-400 text-lg">
+          Explore {total || '300+'} food additives and their health effects
+        </p>
+      </div>
 
-        {/* Filters */}
-        <div className="glass rounded-2xl p-6 mb-8">
-          <div className="grid md:grid-cols-3 gap-4">
-            {/* Search */}
-            <div>
-              <label className="block text-sm font-medium mb-2 text-slate-300">Search</label>
+      {/* Filters */}
+      <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 mb-8">
+        <div className="grid md:grid-cols-3 gap-4">
+          {/* Search */}
+          <div>
+            <label className="block text-sm font-medium mb-2 text-slate-300">Search</label>
+            <div className="relative">
+              <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search by name, E-number, or alias..."
-                className="w-full px-4 py-2 bg-slate-800/50 border border-slate-600 rounded-lg focus:border-nutri-primary focus:ring-1 focus:ring-nutri-primary outline-none transition"
+                placeholder="Search by name, E-number..."
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-800/50 border border-white/10 rounded-xl focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition text-white placeholder-slate-500"
               />
             </div>
+          </div>
 
-            {/* Risk Level Filter */}
-            <div>
-              <label className="block text-sm font-medium mb-2 text-slate-300">Risk Level</label>
-                <select
-                value={filterRisk}
-                onChange={(e) => setFilterRisk(e.target.value)}
-                className="w-full px-4 py-2 bg-slate-800/50 border border-slate-600 rounded-lg focus:border-nutri-primary focus:ring-1 focus:ring-nutri-primary outline-none transition"
-              >
-                <option value="all">All Levels</option>
-                <option value="high">High Risk</option>
-                <option value="moderate">Moderate</option>
-                <option value="low">Low Risk</option>
-                <option value="minimal">Minimal Risk</option>
-              </select>
-            </div>
+          {/* Risk Level Filter */}
+          <div>
+            <label className="block text-sm font-medium mb-2 text-slate-300">Risk Level</label>
+            <select
+              value={filterRisk}
+              onChange={(e) => setFilterRisk(e.target.value)}
+              className="w-full px-4 py-2.5 bg-slate-800/50 border border-white/10 rounded-xl focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition text-white"
+            >
+              <option value="all">All Levels</option>
+              <option value="high">High Risk</option>
+              <option value="moderate">Moderate</option>
+              <option value="low">Low Risk</option>
+              <option value="minimal">Minimal Risk</option>
+            </select>
+          </div>
 
-            {/* Category Filter */}
-            <div>
-              <label className="block text-sm font-medium mb-2 text-slate-300">Category</label>
-              <select
-                value={filterCategory}
-                onChange={(e) => setFilterCategory(e.target.value)}
-                className="w-full px-4 py-2 bg-slate-800/50 border border-slate-600 rounded-lg focus:border-nutri-primary focus:ring-1 focus:ring-nutri-primary outline-none transition"
-              >
-                <option value="all">All Categories</option>
-                {categories.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
-            </div>
+          {/* Category Filter */}
+          <div>
+            <label className="block text-sm font-medium mb-2 text-slate-300">Category</label>
+            <select
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="w-full px-4 py-2.5 bg-slate-800/50 border border-white/10 rounded-xl focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition text-white"
+            >
+              <option value="all">All Categories</option>
+              {categories.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
           </div>
         </div>
+      </div>
 
-        {/* Results Count */}
-        <div className="mb-4 text-slate-400">
-          Showing {chemicals.length} of {total} chemicals
-        </div>
+      {/* Results Count */}
+      <div className="mb-6 flex items-center justify-between">
+        <span className="text-slate-400">
+          Showing <span className="text-white font-medium">{chemicals.length}</span> of <span className="text-white font-medium">{total}</span> chemicals
+        </span>
+      </div>
 
-        {/* Table */}
-        <div className="glass rounded-2xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-800/50">
-                <tr>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">Chemical Name</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">E-Number</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">Category</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">Risk Level</th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">Purpose</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-700/50">
-                {chemicals.map((chem, idx) => (
-                  <tr key={idx} className="hover:bg-slate-800/30 transition">
-                    <td className="px-6 py-4">
-                      <div className="font-medium text-white">{chem.chemical_name}</div>
-                      {chem.health_concerns && (
-                        <div className="text-xs text-slate-400 mt-1">{chem.health_concerns}</div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-slate-300">{chem.e_number || '-'}</td>
-                    <td className="px-6 py-4 text-slate-300">{chem.category || '-'}</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRiskColor(chem.risk_level)}`}>
-                        {chem.risk_level || 'Unknown'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-slate-300 text-sm">{chem.purpose || '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* Loading State */}
+      {loading && (
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="w-12 h-12 border-4 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin mx-auto mb-4" />
+            <p className="text-slate-400">Loading chemicals...</p>
           </div>
-          
-          {chemicals.length === 0 && !loading && (
-            <div className="p-8 text-center text-slate-400">
-              No chemicals found matching your criteria.
+        </div>
+      )}
+
+      {/* Chemical Cards Grid */}
+      {!loading && (
+        <>
+          {chemicals.length > 0 ? (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {chemicals.map((chemical, idx) => (
+                <div 
+                  key={idx} 
+                  className="animate-fade-in"
+                  style={{ animationDelay: `${idx * 50}ms` }}
+                >
+                  <ChemicalCard 
+                    chemical={chemical} 
+                    onClick={setSelectedChemical} 
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-64 bg-white/5 border border-white/10 rounded-2xl">
+              <svg className="w-16 h-16 text-slate-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+              </svg>
+              <p className="text-slate-400 text-lg">No chemicals found</p>
+              <p className="text-slate-500 text-sm mt-1">Try adjusting your search or filters</p>
             </div>
           )}
-        </div>
-      </main>
-    </div>
+        </>
+      )}
+
+      {/* Chemical Modal */}
+      {selectedChemical && (
+        <ChemicalModal 
+          chemical={selectedChemical} 
+          onClose={() => setSelectedChemical(null)} 
+        />
+      )}
+    </Layout>
   );
 }
 
